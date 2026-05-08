@@ -43,6 +43,7 @@ fun main() = application {
     // composable which only supports the legacy XEmbed protocol.
     DisposableEffect(Unit) {
         SystemTray.DEBUG = false
+        SystemTray.FORCE_TRAY_TYPE = SystemTray.TrayType.AppIndicator
         val tray = SystemTray.get()
         if (tray != null) {
             val iconStream = Thread.currentThread().contextClassLoader

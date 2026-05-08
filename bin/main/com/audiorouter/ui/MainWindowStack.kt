@@ -255,12 +255,12 @@ private fun rememberCpuUsage(): Float {
 @Composable
 private fun ColumnHeaders() {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         HeaderCell("CHANNEL", widthFraction = 0f, fixedWidth = 90.dp)
         HeaderCell("STREAMS", widthFraction = 1f)
-        HeaderCell("LEVEL", widthFraction = 0f, fixedWidth = 240.dp)
+        HeaderCell("LEVEL", widthFraction = 0f, fixedWidth = 160.dp)
         HeaderCell("VOLUME", widthFraction = 0f, fixedWidth = 220.dp)
         HeaderCell("OUTPUT", widthFraction = 0f, fixedWidth = 180.dp)
         Spacer(Modifier.width(36.dp))
@@ -371,7 +371,7 @@ private fun ChannelRow(
         }
 
         // VU meters
-        Box(modifier = Modifier.width(240.dp).padding(end = 14.dp)) {
+        Box(modifier = Modifier.width(160.dp).padding(end = 0.dp)) {
             VuMeterStereo(
                 levelL = levelL,
                 levelR = levelR,
@@ -391,7 +391,7 @@ private fun ChannelRow(
                 onChange = onVolumeChange,
                 modifier = Modifier.weight(1f)
             )
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(3.dp))
             Text(
                 if (muted) "—" else volume.toString(),
                 color = if (muted) TextFaint else TextHi,
@@ -547,6 +547,7 @@ private fun OverflowChip(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun VolumeSlider(
     value: Int,
@@ -568,6 +569,16 @@ private fun VolumeSlider(
             activeTrackColor = if (muted) TextFaint else hue,
             inactiveTrackColor = Glass3
         ),
+        track = { sliderState ->
+            SliderDefaults.Track(
+                sliderState = sliderState,
+                modifier = Modifier.height(1.dp),
+                colors = SliderDefaults.colors(
+                    activeTrackColor = if (muted) TextFaint else hue,
+                    inactiveTrackColor = Glass3
+                )
+            )
+        },
         modifier = modifier
     )
 }

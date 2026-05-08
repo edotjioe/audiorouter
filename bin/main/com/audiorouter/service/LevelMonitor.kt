@@ -78,6 +78,8 @@ class LevelMonitor(private val audioService: AudioService, private val scope: Co
                     proc.destroy()
                     _levels[channel]!!.value = 0f to 0f
                 }
+                // pacat exited cleanly (sink unavailable); back off before retrying
+                delay(2000)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

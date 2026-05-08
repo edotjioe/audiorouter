@@ -8,3 +8,4 @@ KOTLIN_FOR_JAVA_DEVS.md
 .DS_Store
 .claude/
 .kotlin/
+.vscode/settings.json

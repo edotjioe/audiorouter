@@ -83,8 +83,31 @@ compose.desktop {
 // so the Compose plugin has already registered the "run" task
 afterEvaluate {
     tasks.named<JavaExec>("run") {
-        listOf("DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR").forEach { v ->
+        // Forward session env vars (works when daemon inherits them)
+        listOf("DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR",
+               "PULSE_SERVER", "PULSE_RUNTIME_PATH", "PIPEWIRE_REMOTE",
+               "DBUS_SESSION_BUS_ADDRESS").forEach { v ->
             System.getenv(v)?.let { environment(v, it) }
+        }
+        // Bazzite/Flatpak fallbacks: probe well-known socket paths directly
+        // so the run task gets them even when the Gradle daemon lacks the env vars
+        if (!environment.containsKey("PULSE_SERVER") &&
+                file("/run/flatpak/pulse/native").exists()) {
+            environment("PULSE_SERVER", "unix:/run/flatpak/pulse/native")
+        }
+        // Prefer the real KDE session bus (needed for StatusNotifierItem/AppIndicator).
+        // Fall back to the Flatpak proxy bus only when the real one doesn't exist.
+        if (!environment.containsKey("DBUS_SESSION_BUS_ADDRESS")) {
+            val xdgRuntime = environment["XDG_RUNTIME_DIR"]?.toString()
+                ?: System.getenv("XDG_RUNTIME_DIR")
+            val realBus = xdgRuntime?.let { file("$it/bus") }
+            val flatpakBus = file("/run/flatpak/bus")
+            when {
+                realBus != null && realBus.exists() ->
+                    environment("DBUS_SESSION_BUS_ADDRESS", "unix:path=${realBus.absolutePath}")
+                flatpakBus.exists() ->
+                    environment("DBUS_SESSION_BUS_ADDRESS", "unix:path=${flatpakBus.absolutePath}")
+            }
         }
     }
 }

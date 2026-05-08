@@ -42,7 +42,7 @@ fun VuMeterStereo(
     width: Dp,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         VuMeterRow(rawLevel = levelL, width = width)
         VuMeterRow(rawLevel = levelR, width = width)
     }
@@ -61,8 +61,8 @@ fun VuMeterStereo(
 fun VuMeterRow(
     rawLevel: Float,
     width: Dp,
-    height: Dp = 4.dp,
-    segments: Int = 32,
+    height: Dp = 8.dp,
+    segments: Int = 43,
     modifier: Modifier = Modifier
 ) {
     // Convert linear RMS to perceptual dBFS scale: -60 dBFS → 0.0, 0 dBFS → 1.0

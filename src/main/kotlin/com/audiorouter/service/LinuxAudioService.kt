@@ -16,11 +16,24 @@ private val log = KotlinLogging.logger {}
  */
 class LinuxAudioService : AudioService {
 
+    // Detect the PulseAudio/PipeWire socket path so subprocesses can connect
+    // even when PULSE_SERVER isn't inherited (e.g. Gradle daemon, systemd services).
+    private val pulseServer: String? by lazy {
+        System.getenv("PULSE_SERVER")
+            ?: java.io.File("/run/flatpak/pulse/native").takeIf { it.exists() }?.let { "unix:${it.path}" }
+            ?: System.getenv("XDG_RUNTIME_DIR")?.let { dir ->
+                java.io.File("$dir/pulse/native").takeIf { it.exists() }?.let { "unix:${it.path}" }
+            }
+    }
+
+    private fun audioProcess(vararg args: String): ProcessBuilder =
+        ProcessBuilder(*args).redirectErrorStream(true).also { pb ->
+            pulseServer?.let { pb.environment()["PULSE_SERVER"] = it }
+        }
+
     private suspend fun exec(vararg args: String): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
-            val process = ProcessBuilder(*args)
-                .redirectErrorStream(true)
-                .start()
+            val process = audioProcess(*args).start()
             val exited = process.waitFor(10, TimeUnit.SECONDS)
             val output = process.inputStream.bufferedReader().readText()
             if (!exited) { process.destroyForcibly(); error("Command timed out: ${args.joinToString(" ")}") }
@@ -82,7 +95,9 @@ class LinuxAudioService : AudioService {
 
     override suspend fun listSinkInputs(): List<AudioStream> {
         val output = exec("pactl", "list", "sink-inputs").getOrElse { return emptyList() }
-        return parseSinkInputs(output)
+        val streams = parseSinkInputs(output)
+        log.info { "listSinkInputs: ${output.length} chars → ${streams.size} streams: ${streams.map { it.appName }}" }
+        return streams
     }
 
     override suspend fun moveSinkInput(sinkInputId: Int, sinkName: String): Boolean =
@@ -95,10 +110,10 @@ class LinuxAudioService : AudioService {
         exec("pactl", "set-sink-mute", sinkName, if (muted) "1" else "0").isSuccess
 
     override fun startSubscribeProcess(): Process =
-        ProcessBuilder("pactl", "subscribe").redirectErrorStream(true).start()
+        audioProcess("pactl", "subscribe").start()
 
     override fun openLevelCapture(channel: AudioChannel): Process =
-        ProcessBuilder(
+        audioProcess(
             "pacat", "--record",
             "--device=${channel.sinkName}.monitor",
             "--format=s16le", "--rate=22050", "--channels=2", "--latency-msec=50"

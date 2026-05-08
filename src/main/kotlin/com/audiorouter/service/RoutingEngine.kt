@@ -11,7 +11,7 @@ private val log = KotlinLogging.logger {}
 
 class RoutingEngine(
     private val monitor: StreamMonitor,
-    private val pipeWire: PipeWireService,
+    private val pipeWire: AudioService,
     private val configRepo: ConfigRepository,
     private val scope: CoroutineScope
 ) {
@@ -111,7 +111,7 @@ class RoutingEngine(
     private suspend fun refreshAllStreams() {
         val rawStreams = pipeWire.listSinkInputs()
         val config = configRepo.config.value
-        val sinks = pipeWire.listShortSinks()
+        val sinks: List<Pair<Int, String>> = pipeWire.listAllSinks()
 
         val enriched = rawStreams.map { stream ->
             val channel = sinks.firstOrNull { (id, _) -> id == stream.currentSinkId }

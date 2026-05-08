@@ -16,7 +16,7 @@ sealed class AudioEvent {
 }
 
 class StreamMonitor(
-    private val pipeWire: PipeWireService,
+    private val pipeWire: AudioService,
     private val scope: CoroutineScope
 ) {
     private val _events = MutableSharedFlow<AudioEvent>(extraBufferCapacity = 64)

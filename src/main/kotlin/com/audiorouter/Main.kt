@@ -112,13 +112,13 @@ fun main() = application {
 
 class AppState(private val scope: CoroutineScope) {
 
-    private val pipeWire = PipeWireService()
+    private val audioService = AudioServiceFactory.create()
     private val configRepo = ConfigRepository(scope)
-    val volumeController = VolumeController(pipeWire, configRepo, scope)
-    private val sinkManager = VirtualSinkManager(pipeWire)
-    private val streamMonitor = StreamMonitor(pipeWire, scope)
-    val routingEngine = RoutingEngine(streamMonitor, pipeWire, configRepo, scope)
-    val levelMonitor = LevelMonitor(scope)
+    val volumeController = VolumeController(audioService, configRepo, scope)
+    private val sinkManager = VirtualSinkManager(audioService)
+    private val streamMonitor = StreamMonitor(audioService, scope)
+    val routingEngine = RoutingEngine(streamMonitor, audioService, configRepo, scope)
+    val levelMonitor = LevelMonitor(audioService, scope)
 
     private val _availableSinks = MutableStateFlow<List<Pair<Int, String>>>(emptyList())
 
@@ -151,7 +151,7 @@ class AppState(private val scope: CoroutineScope) {
         log.info { "AudioRouter starting up" }
         configRepo.load()
 
-        _availableSinks.value = pipeWire.listRealSinks()
+        _availableSinks.value = audioService.listRealSinks()
 
         val outputSink = configRepo.config.value.outputSinkName.ifBlank {
             _availableSinks.value.firstOrNull()?.second ?: ""

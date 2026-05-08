@@ -10,7 +10,7 @@ import kotlin.math.sqrt
 
 private val log = KotlinLogging.logger {}
 
-class LevelMonitor(private val scope: CoroutineScope) {
+class LevelMonitor(private val audioService: AudioService, private val scope: CoroutineScope) {
 
     private val _levels: Map<AudioChannel, MutableStateFlow<Pair<Float, Float>>> =
         AudioChannel.entries.associateWith { MutableStateFlow(0f to 0f) }
@@ -24,20 +24,13 @@ class LevelMonitor(private val scope: CoroutineScope) {
     }
 
     private suspend fun monitorChannel(channel: AudioChannel) {
-        val device = "${channel.sinkName}.monitor"
         // 4 bytes per stereo s16le frame; 2205 frames ≈ 100 ms at 22050 Hz
         val buffer = ByteArray(4410)
 
         while (currentCoroutineContext().isActive) {
             try {
-                val proc = ProcessBuilder(
-                    "pacat", "--record",
-                    "--device=$device",
-                    "--format=s16le",
-                    "--rate=22050",
-                    "--channels=2",
-                    "--latency-msec=50"
-                ).start()
+                val proc = audioService.openLevelCapture(channel)
+                if (proc == null) { delay(5000); continue }
 
                 try {
                     val input = proc.inputStream

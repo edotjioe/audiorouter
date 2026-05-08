@@ -11,7 +11,7 @@ private val log = KotlinLogging.logger {}
 
 @OptIn(FlowPreview::class)
 class VolumeController(
-    private val pipeWire: PipeWireService,
+    private val pipeWire: AudioService,
     private val configRepo: ConfigRepository,
     private val scope: CoroutineScope
 ) {

@@ -37,6 +37,10 @@ dependencies {
     // StatusNotifierItem-based tray for KDE Plasma 6 / Wayland (replaces AWT XEmbed tray)
     implementation("com.dorkbox:SystemTray:4.4")
 
+    // JNA for Windows WASAPI audio backend
+    implementation("net.java.dev.jna:jna:5.14.0")
+    implementation("net.java.dev.jna:jna-platform:5.14.0")
+
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("io.mockk:mockk:1.13.13")

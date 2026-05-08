@@ -6,7 +6,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val log = KotlinLogging.logger {}
 
-class VirtualSinkManager(private val pipeWire: PipeWireService) {
+class VirtualSinkManager(private val pipeWire: AudioService) {
 
     private data class ModuleIds(val nullSink: Int, val loopback: Int)
 

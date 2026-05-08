@@ -6,12 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
-/**
- * Stack theme — glass + electric cyan accent on cool charcoal.
- *
- * Use [StackTheme] instead of [AppTheme] when rendering [MainWindowStack].
- * The original orange theme is left intact for the legacy [MainWindow].
- */
+/** Glass + electric cyan accent on cool charcoal — used by [MainWindowStack]. */
 
 // Accent — luminous cyan (oklch 0.84 0.15 195)
 val Cyan500 = Color(0xFF4FD7E0)

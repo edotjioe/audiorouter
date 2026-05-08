@@ -39,12 +39,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.audiorouter.model.AudioChannel
 import com.audiorouter.model.AudioStream
+import com.audiorouter.model.RoutingConfig
 import com.audiorouter.service.LevelMonitor
 import com.audiorouter.ui.stack.DragController
 import com.audiorouter.ui.stack.VuMeterStereo
 import com.audiorouter.ui.theme.*
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+
+// ── Shared UI state ───────────────────────────────────────────────────────
+
+data class MainWindowState(
+    val config: RoutingConfig,
+    val streams: List<AudioStream>,
+    val availableSinks: List<Pair<Int, String>>,
+    val volumes: Map<AudioChannel, Int>,
+    val mutes: Map<AudioChannel, Boolean>,
+    val channelOutputs: Map<AudioChannel, String>
+)
 
 // ── Density ───────────────────────────────────────────────────────────────
 enum class StackDensity(

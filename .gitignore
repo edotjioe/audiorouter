@@ -1,5 +1,6 @@
 .gradle/
 build/
+KOTLIN_FOR_JAVA_DEVS.md
 *.class
 *.log
 .idea/

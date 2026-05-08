@@ -9,6 +9,22 @@ import kotlinx.coroutines.flow.*
 
 private val log = KotlinLogging.logger {}
 
+/**
+ * Manages per-channel volume and mute state, debouncing rapid slider changes before
+ * issuing audio-server calls.
+ *
+ * Each channel has a [MutableStateFlow] for volume and mute. [init] seeds them from the
+ * persisted config and starts collection coroutines that:
+ * - Debounce volume changes by 100 ms before calling [AudioService.setSinkVolume].
+ * - Skip the initial mute value (already applied by [applyStoredVolumes] on startup) and only
+ *   forward subsequent changes to [AudioService.setSinkMute].
+ *
+ * Both flows also persist their latest value to [ConfigRepository] on each emission.
+ *
+ * @param pipeWire   The platform audio backend.
+ * @param configRepo Config repository used to seed initial state and persist changes.
+ * @param scope      Coroutine scope that owns the collection jobs.
+ */
 @OptIn(FlowPreview::class)
 class VolumeController(
     private val pipeWire: AudioService,

@@ -8,13 +8,31 @@ import kotlinx.coroutines.flow.asSharedFlow
 
 private val log = KotlinLogging.logger {}
 
+/** Events emitted by [StreamMonitor] when the audio-server state changes. */
 sealed class AudioEvent {
+    /** A new sink-input (audio stream) with the given [sinkInputId] has appeared. */
     data class SinkInputAdded(val sinkInputId: Int) : AudioEvent()
+    /** The sink-input with [sinkInputId] has been removed (application closed or paused). */
     data class SinkInputRemoved(val sinkInputId: Int) : AudioEvent()
+    /** One or more audio sinks changed (device added/removed or loopback target updated). */
     data object SinkChanged : AudioEvent()
+    /** The subscription process died and was restarted; all stream state should be refreshed. */
     data object AllStreamsRefresh : AudioEvent()
 }
 
+/**
+ * Monitors the audio server for stream and device changes, emitting [AudioEvent]s on [events].
+ *
+ * On Linux this runs a long-lived `pactl subscribe` process and parses its stdout.
+ * On Windows it reads periodic tick lines from a PowerShell polling script.
+ * On macOS it receives ticks from [MacAudioService]'s CoreAudio device-change poller.
+ *
+ * If the subscription process exits unexpectedly, the monitor re-launches it with exponential
+ * backoff (500 ms → 5 s) and emits [AudioEvent.AllStreamsRefresh] so consumers can reconcile state.
+ *
+ * @param pipeWire  The platform audio backend that supplies the subscription process.
+ * @param scope     Coroutine scope used to host the monitor job.
+ */
 open class StreamMonitor(
     private val pipeWire: AudioService,
     private val scope: CoroutineScope

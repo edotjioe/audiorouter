@@ -4,7 +4,17 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val log = KotlinLogging.logger {}
 
+/**
+ * Creates the correct [AudioService] implementation for the current platform.
+ *
+ * Detection is done via `System.getProperty("os.name")`:
+ * - `linux`   → [LinuxAudioService] (PipeWire / PulseAudio via pactl)
+ * - `windows` → [WindowsAudioService] (WASAPI via JNA)
+ * - `mac` / `darwin` → [MacAudioService] (CoreAudio via JNA)
+ * - anything else → [LinuxAudioService] as a best-effort fallback
+ */
 object AudioServiceFactory {
+    /** Instantiates and returns the platform-appropriate [AudioService]. */
     fun create(): AudioService {
         val os = System.getProperty("os.name", "").lowercase()
         return when {

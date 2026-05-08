@@ -9,6 +9,19 @@ import kotlinx.coroutines.flow.*
 
 private val log = KotlinLogging.logger {}
 
+/**
+ * Consumes [AudioEvent]s from [StreamMonitor] and keeps audio streams on their assigned channels.
+ *
+ * On startup [start] launches two coroutines:
+ * - An event loop that reacts to sink-input additions, removals, and sink changes.
+ * - A one-shot refresh that applies persisted [AppRule]s to already-running streams.
+ *
+ * [assignStream] / [unassignStream] are called from the UI layer when the user drags a stream
+ * to a channel or removes an assignment.
+ *
+ * @property streams A [StateFlow] of all currently live audio streams, enriched with their
+ *                   [AudioStream.assignedChannel] by correlating the sink they are on.
+ */
 class RoutingEngine(
     private val monitor: StreamMonitor,
     private val pipeWire: AudioService,
@@ -41,6 +54,10 @@ class RoutingEngine(
         engineJob?.cancel()
     }
 
+    /**
+     * Moves [stream] to [channel]'s virtual sink and saves the rule to [ConfigRepository].
+     * No-op (with a warning) if the underlying move-sink-input call fails.
+     */
     suspend fun assignStream(stream: AudioStream, channel: AudioChannel) {
         val sinkName = channel.sinkName
         val moved = pipeWire.moveSinkInput(stream.sinkInputId, sinkName)
@@ -53,6 +70,10 @@ class RoutingEngine(
         }
     }
 
+    /**
+     * Removes the routing rule for [stream] and moves the stream back to the global output sink.
+     * Moving back is necessary so that a subsequent refresh does not re-show the stream as assigned.
+     */
     suspend fun unassignStream(stream: AudioStream) {
         // Move the physical stream off the virtual channel sink back to the real output,
         // otherwise the next refresh will still see it on AudioRouter_X and re-show it as assigned

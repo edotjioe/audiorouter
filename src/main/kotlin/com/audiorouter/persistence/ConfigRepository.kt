@@ -19,6 +19,23 @@ private val json = Json {
     encodeDefaults = true
 }
 
+/**
+ * Reads and writes [RoutingConfig] to disk, with debounced atomic saves.
+ *
+ * The config file lives at `~/.config/AudioRouter/config.json` by default.
+ * All writes are performed atomically via a temp-file rename so a crash during
+ * a save never leaves a corrupt config behind.
+ *
+ * Usage:
+ * 1. Call [load] once at startup to read the persisted config and start the write job.
+ * 2. Read current state from [config] (a [StateFlow]).
+ * 3. Apply mutations via [update] — in-memory state changes immediately and a debounced
+ *    disk write is queued automatically.
+ * 4. Call [flushImmediately] on shutdown to bypass the debounce and write synchronously.
+ *
+ * @param scope             Coroutine scope that owns the background write job.
+ * @param configDirOverride Override the config directory (used in tests to isolate state).
+ */
 @OptIn(FlowPreview::class)
 class ConfigRepository(
     private val scope: CoroutineScope,
@@ -40,6 +57,7 @@ class ConfigRepository(
     private val pendingWrite = MutableSharedFlow<RoutingConfig>(extraBufferCapacity = 1)
     private var writeJob: Job? = null
 
+    /** Loads config from disk (creates the config dir if needed) and starts the write-debounce job. */
     fun load() {
         configDir.createDirectories()
         if (configFile.exists()) {
@@ -62,12 +80,17 @@ class ConfigRepository(
         }
     }
 
+    /**
+     * Applies [transform] to the current config and enqueues a debounced disk write.
+     * The [config] StateFlow is updated synchronously before this function returns.
+     */
     fun update(transform: (RoutingConfig) -> RoutingConfig) {
         val updated = transform(_config.value)
         _config.value = updated
         pendingWrite.tryEmit(updated)
     }
 
+    /** Cancels the debounce job and writes the current config to disk immediately. Call on shutdown. */
     suspend fun flushImmediately() {
         writeJob?.cancel()
         writeAtomic(_config.value)

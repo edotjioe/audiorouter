@@ -10,6 +10,16 @@ import kotlin.math.sqrt
 
 private val log = KotlinLogging.logger {}
 
+/**
+ * Computes stereo RMS levels from a raw interleaved s16le PCM buffer.
+ *
+ * The buffer is expected to contain pairs of little-endian 16-bit signed samples:
+ * `[L_low, L_high, R_low, R_high, ...]` at 22050 Hz stereo as produced by `pacat --format=s16le`.
+ *
+ * @param buffer     Raw PCM data; may be larger than [validBytes].
+ * @param validBytes Number of valid bytes starting at index 0.
+ * @return A pair of RMS values (left, right) in the range 0.0–1.0, or `0f to 0f` for silence.
+ */
 internal fun computeStereoRms(buffer: ByteArray, validBytes: Int): Pair<Float, Float> {
     var sumL = 0.0; var sumR = 0.0; var frames = 0; var i = 0
     while (i + 3 < validBytes) {
@@ -22,6 +32,18 @@ internal fun computeStereoRms(buffer: ByteArray, validBytes: Int): Pair<Float, F
     else 0f to 0f
 }
 
+/**
+ * Drives per-channel stereo VU meters by continuously reading PCM data from each channel's
+ * audio monitor source and computing RMS levels.
+ *
+ * For each channel in [AudioChannel.routingChannels], a coroutine on [Dispatchers.IO] opens a
+ * capture stream via [AudioService.openLevelCapture], reads 100 ms chunks, and updates
+ * the corresponding [StateFlow] in [levelFlow]. If the capture process exits or returns null,
+ * the monitor backs off and retries every 2–5 seconds.
+ *
+ * @param audioService Platform audio backend that supplies capture streams.
+ * @param scope        Coroutine scope that owns the per-channel monitor coroutines.
+ */
 class LevelMonitor(private val audioService: AudioService, private val scope: CoroutineScope) {
 
     private val _levels: Map<AudioChannel, MutableStateFlow<Pair<Float, Float>>> =

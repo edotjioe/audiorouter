@@ -6,7 +6,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
-/** Glass + electric cyan accent on cool charcoal — used by [MainWindowStack]. */
+/**
+ * Design tokens and [MaterialTheme] wrapper for AudioRouter's UI.
+ *
+ * The palette is built around a **glass + electric cyan** motif on a cool dark charcoal base.
+ * All color constants are defined at file scope so composables can reference them directly
+ * without going through [MaterialTheme.colorScheme] for custom colors.
+ *
+ * Use [StackTheme] as the root wrapper in `main()` to apply the color scheme globally.
+ */
 
 // Accent — luminous cyan (oklch 0.84 0.15 195)
 val Cyan500 = Color(0xFF4FD7E0)

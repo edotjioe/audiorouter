@@ -17,11 +17,22 @@ import kotlinx.coroutines.delay
 import kotlin.math.max
 
 /**
- * Stereo VU meter driven by real RMS levels from [LevelMonitor].
+ * Stereo VU meter displaying two horizontal bar rows driven by real RMS audio levels.
  *
- * [levelL] and [levelR] are 0..1 RMS values updated ~10 Hz by the monitor.
- * The composable applies fast-attack / slow-decay smoothing and a peak-hold
- * tick internally at 30 Hz so the animation stays fluid.
+ * [levelL] and [levelR] are 0–1 RMS values supplied by [LevelMonitor] at approximately 10 Hz.
+ * Internally each row applies fast-attack / slow-decay smoothing and peak-hold at 30 Hz via
+ * [useSmoothedLevel], keeping the animation fluid even when the source updates slowly.
+ *
+ * The bar is divided into [VuMeterRow.segments] colored segments:
+ * - 0–60%: cyan (normal)
+ * - 60–85%: yellow-green (elevated)
+ * - 85–100%: orange-red (peak / hot)
+ * A white peak-hold tick appears briefly after the highest recent level.
+ *
+ * @param levelL   Left-channel RMS level in 0–1.
+ * @param levelR   Right-channel RMS level in 0–1.
+ * @param width    Horizontal width of each bar row.
+ * @param modifier Optional [Modifier] applied to the [Column] container.
  */
 @Composable
 fun VuMeterStereo(
@@ -36,6 +47,15 @@ fun VuMeterStereo(
     }
 }
 
+/**
+ * A single horizontal VU meter bar with segment coloring and peak hold.
+ *
+ * @param rawLevel  Raw 0–1 RMS level from the audio backend.
+ * @param width     Horizontal extent of the bar (used for segment layout math).
+ * @param height    Height of the bar in dp.
+ * @param segments  Number of colored LED-style segments.
+ * @param modifier  Optional [Modifier].
+ */
 @Composable
 fun VuMeterRow(
     rawLevel: Float,

@@ -16,6 +16,10 @@ object AudioServiceFactory {
                 log.info { "Platform: Windows — using WASAPI backend" }
                 WindowsAudioService()
             }
+            os.contains("mac") || os.contains("darwin") -> {
+                log.info { "Platform: macOS — using CoreAudio backend" }
+                MacAudioService()
+            }
             else -> {
                 log.warn { "Unsupported OS '$os' — falling back to Linux backend" }
                 LinuxAudioService()

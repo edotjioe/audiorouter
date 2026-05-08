@@ -20,9 +20,11 @@ private val json = Json {
 }
 
 @OptIn(FlowPreview::class)
-class ConfigRepository(private val scope: CoroutineScope) {
-
-    private val configDir: Path = run {
+class ConfigRepository(
+    private val scope: CoroutineScope,
+    configDirOverride: Path? = null
+) {
+    private val configDir: Path = configDirOverride ?: run {
         val xdgConfig = System.getenv("XDG_CONFIG_HOME")
         val base = if (xdgConfig.isNullOrBlank()) Path(System.getProperty("user.home")).resolve(".config")
                    else Path(xdgConfig)

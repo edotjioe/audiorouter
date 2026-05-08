@@ -15,16 +15,16 @@ sealed class AudioEvent {
     data object AllStreamsRefresh : AudioEvent()
 }
 
-class StreamMonitor(
+open class StreamMonitor(
     private val pipeWire: AudioService,
     private val scope: CoroutineScope
 ) {
     private val _events = MutableSharedFlow<AudioEvent>(extraBufferCapacity = 64)
-    val events: SharedFlow<AudioEvent> = _events.asSharedFlow()
+    open val events: SharedFlow<AudioEvent> = _events.asSharedFlow()
 
     private var monitorJob: Job? = null
 
-    fun start() {
+    open fun start() {
         monitorJob = scope.launch {
             var backoffMs = 500L
             while (isActive) {
@@ -43,7 +43,7 @@ class StreamMonitor(
         }
     }
 
-    fun stop() {
+    open fun stop() {
         monitorJob?.cancel()
         monitorJob = null
     }
@@ -64,7 +64,7 @@ class StreamMonitor(
         }
     }
 
-    private fun parseEvent(line: String): AudioEvent? {
+    internal fun parseEvent(line: String): AudioEvent? {
         // pactl subscribe output: "Event 'new' on sink-input #1234"
         val idRegex = Regex("""#(\d+)""")
         return when {

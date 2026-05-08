@@ -54,14 +54,26 @@ compose.desktop {
         jvmArgs += "--enable-native-access=ALL-UNNAMED"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Rpm, TargetFormat.Deb, TargetFormat.AppImage)
+            targetFormats(TargetFormat.Rpm, TargetFormat.Deb, TargetFormat.AppImage, TargetFormat.Dmg)
             packageName = "AudioRouter"
             packageVersion = "1.0.0"
-            description = "Per-application audio routing for Linux with PipeWire"
+            description = "Per-application virtual audio routing"
             vendor = "AudioRouter"
 
             linux {
                 iconFile.set(project.file("src/main/resources/icon.png"))
+            }
+
+            macOS {
+                iconFile.set(project.file("src/main/resources/icon.icns"))
+                bundleID = "com.audiorouter.app"
+                // Microphone permission required for level capture via TargetDataLine
+                infoPlist {
+                    extraKeysRawXml = """
+                        <key>NSMicrophoneUsageDescription</key>
+                        <string>AudioRouter captures audio device output to display VU meter levels.</string>
+                    """.trimIndent()
+                }
             }
         }
     }

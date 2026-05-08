@@ -10,6 +10,18 @@ import kotlin.math.sqrt
 
 private val log = KotlinLogging.logger {}
 
+internal fun computeStereoRms(buffer: ByteArray, validBytes: Int): Pair<Float, Float> {
+    var sumL = 0.0; var sumR = 0.0; var frames = 0; var i = 0
+    while (i + 3 < validBytes) {
+        val l = ((buffer[i].toInt() and 0xFF) or (buffer[i + 1].toInt() shl 8)).toShort().toFloat() / 32768f
+        val r = ((buffer[i + 2].toInt() and 0xFF) or (buffer[i + 3].toInt() shl 8)).toShort().toFloat() / 32768f
+        sumL += l * l; sumR += r * r; frames++; i += 4
+    }
+    return if (frames > 0)
+        sqrt(sumL / frames).toFloat().coerceIn(0f, 1f) to sqrt(sumR / frames).toFloat().coerceIn(0f, 1f)
+    else 0f to 0f
+}
+
 class LevelMonitor(private val audioService: AudioService, private val scope: CoroutineScope) {
 
     private val _levels: Map<AudioChannel, MutableStateFlow<Pair<Float, Float>>> =
@@ -37,20 +49,8 @@ class LevelMonitor(private val audioService: AudioService, private val scope: Co
                     while (currentCoroutineContext().isActive) {
                         val read = input.read(buffer)
                         if (read < 4) break
-                        var sumL = 0.0; var sumR = 0.0; var frames = 0
-                        var i = 0
-                        while (i + 3 < read) {
-                            val l = ((buffer[i].toInt() and 0xFF) or (buffer[i + 1].toInt() shl 8))
-                                .toShort().toFloat() / 32768f
-                            val r = ((buffer[i + 2].toInt() and 0xFF) or (buffer[i + 3].toInt() shl 8))
-                                .toShort().toFloat() / 32768f
-                            sumL += l * l; sumR += r * r; frames++; i += 4
-                        }
-                        if (frames > 0) {
-                            _levels[channel]!!.value =
-                                sqrt(sumL / frames).toFloat().coerceIn(0f, 1f) to
-                                sqrt(sumR / frames).toFloat().coerceIn(0f, 1f)
-                        }
+                        val (rmsL, rmsR) = computeStereoRms(buffer, read)
+                        if (rmsL > 0f || rmsR > 0f) _levels[channel]!!.value = rmsL to rmsR
                     }
                 } finally {
                     proc.destroy()

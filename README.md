@@ -4,6 +4,8 @@ A Linux desktop application that replicates the SteelSeries GG Sonar feature —
 
 Built with **Kotlin + Compose Multiplatform Desktop** on top of **PipeWire** (`pactl`).
 
+![AudioRouter screenshot](screenshot.png)
+
 ---
 
 ## Features

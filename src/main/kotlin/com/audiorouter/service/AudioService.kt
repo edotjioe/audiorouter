@@ -3,6 +3,7 @@ package com.audiorouter.service
 import com.audiorouter.model.AudioChannel
 import com.audiorouter.model.AudioStream
 
+
 /**
  * Platform-agnostic audio backend.
  *
@@ -13,6 +14,7 @@ interface AudioService {
 
     // ── Device discovery ──────────────────────────────────────────────────
     suspend fun listRealSinks(): List<Pair<Int, String>>
+    suspend fun listRealSources(): List<Pair<Int, String>>
 
     /** All sinks including virtual AudioRouter_ ones — used by RoutingEngine to map stream→channel. */
     suspend fun listAllSinks(): List<Pair<Int, String>>
@@ -23,6 +25,22 @@ interface AudioService {
 
     /** Wire [channel]'s virtual output to a real [outputSinkName]. Returns handle ≥ 0. */
     suspend fun loadLoopback(channel: AudioChannel, outputSinkName: String): Int
+
+    /**
+     * Loopback from an explicit [sourceName] to [sinkName].
+     * Used to route a null-sink monitor into the EQ LADSPA sink.
+     */
+    suspend fun loadLoopbackFromSource(sourceName: String, sinkName: String): Int
+
+    // ── EQ ────────────────────────────────────────────────────────────────
+    /**
+     * Loads a LADSPA mbeq sink named `<channel.sinkName>_eq` with [masterSinkName] as its
+     * downstream output. The loopback from `<channel.sinkName>.monitor` to this EQ sink is
+     * created separately by the caller.
+     *
+     * Returns the module ID on success, or -1 if the mbeq plugin is not installed.
+     */
+    suspend fun loadEqSink(channel: AudioChannel, gains: List<Float>, masterSinkName: String): Int
 
     /** Tear down a module/virtual device by handle. */
     suspend fun unloadModule(id: Int): Boolean

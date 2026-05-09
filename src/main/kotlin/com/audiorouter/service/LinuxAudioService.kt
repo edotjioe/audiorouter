@@ -50,14 +50,33 @@ class LinuxAudioService : AudioService {
         return output.trim().toIntOrNull() ?: run { log.error { "Bad module ID: $output" }; -1 }
     }
 
-    override suspend fun loadLoopback(channel: AudioChannel, outputSinkName: String): Int {
+    override suspend fun loadLoopback(channel: AudioChannel, outputSinkName: String): Int =
+        loadLoopbackFromSource("${channel.sinkName}.monitor", outputSinkName)
+
+    override suspend fun loadLoopbackFromSource(sourceName: String, outputSinkName: String): Int {
         val output = exec(
             "pactl", "load-module", "module-loopback",
-            "source=${channel.sinkName}.monitor",
+            "source=$sourceName",
             "sink=$outputSinkName",
             "latency_msec=10"
         ).getOrElse { return -1 }
         return output.trim().toIntOrNull() ?: run { log.error { "Bad loopback ID: $output" }; -1 }
+    }
+
+    override suspend fun loadEqSink(channel: AudioChannel, gains: List<Float>, masterSinkName: String): Int {
+        val gainStr = com.audiorouter.model.EqSettings(gains = gains).toMbeqControlString()
+        val output = exec(
+            "pactl", "load-module", "module-ladspa-sink",
+            "sink_name=${channel.sinkName}_eq",
+            "master=$masterSinkName",
+            "plugin=mbeq", "label=mbeq",
+            "control=$gainStr"
+        ).getOrNull()?.trim()?.toIntOrNull() ?: run {
+            log.warn { "EQ: mbeq LADSPA plugin not available for ${channel.displayName} — install ladspa-swh-plugins" }
+            return -1
+        }
+        log.info { "EQ sink loaded for ${channel.displayName}: id=$output master=$masterSinkName" }
+        return output
     }
 
     override suspend fun unloadModule(id: Int): Boolean {
@@ -91,6 +110,19 @@ class LinuxAudioService : AudioService {
                 id to name
             }
             .filter { (_, name) -> !name.startsWith("AudioRouter_") }
+    }
+
+    override suspend fun listRealSources(): List<Pair<Int, String>> {
+        val output = exec("pactl", "list", "short", "sources").getOrElse { return emptyList() }
+        return output.lines()
+            .filter { it.isNotBlank() }
+            .mapNotNull { line ->
+                val parts = line.split("\t")
+                val id = parts.getOrNull(0)?.toIntOrNull() ?: return@mapNotNull null
+                val name = parts.getOrNull(1) ?: return@mapNotNull null
+                id to name
+            }
+            .filter { (_, name) -> !name.endsWith(".monitor") && !name.startsWith("AudioRouter_") }
     }
 
     override suspend fun listSinkInputs(): List<AudioStream> {
@@ -133,6 +165,10 @@ class LinuxAudioService : AudioService {
             val nodeName = Regex("""node\.name\s*=\s*"([^"]+)"""").find(block)?.groupValues?.get(1) ?: ""
             val displayName = appName.ifBlank { appBinary.ifBlank { mediaName.ifBlank { nodeName } } }
             if (displayName.isBlank()) return@mapNotNull null
+            // Skip loopback sink-inputs (AudioRouter's own module-loopback instances, or system loopbacks).
+            // PipeWire surfaces them under various property names, all starting with "loopback".
+            if (displayName.startsWith("loopback", ignoreCase = true)
+                || nodeName.startsWith("loopback", ignoreCase = true)) return@mapNotNull null
             AudioStream(sinkInputId, displayName, appBinary, pid, sinkId, null)
         }
     }

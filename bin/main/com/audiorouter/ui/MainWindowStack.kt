@@ -1,5 +1,8 @@
 package com.audiorouter.ui
 
+import androidx.compose.foundation.LocalScrollbarStyle
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -7,8 +10,11 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -33,6 +39,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -53,9 +60,11 @@ data class MainWindowState(
     val config: RoutingConfig,
     val streams: List<AudioStream>,
     val availableSinks: List<Pair<Int, String>>,
+    val availableSources: List<Pair<Int, String>>,
     val volumes: Map<AudioChannel, Int>,
     val mutes: Map<AudioChannel, Boolean>,
-    val channelOutputs: Map<AudioChannel, String>
+    val channelOutputs: Map<AudioChannel, String>,
+    val channelEq: Map<AudioChannel, com.audiorouter.model.EqSettings> = emptyMap()
 )
 
 // ── Density ───────────────────────────────────────────────────────────────
@@ -68,6 +77,21 @@ enum class StackDensity(
     Compact(56.dp, 6.dp, 14.dp, 6.dp),
     Comfortable(72.dp, 9.dp, 18.dp, 8.dp),
     Spacious(88.dp, 14.dp, 22.dp, 10.dp);
+}
+
+// ── Column width percentages ──────────────────────────────────────────────
+// Fixed columns are sized as a % of DESIGN_WIDTH; STREAMS gets all remaining space.
+// Below DESIGN_WIDTH the whole UI scales down uniformly; above it only STREAMS grows.
+private val DESIGN_WIDTH = 1100.dp
+private fun colDp(pct: Float) = DESIGN_WIDTH * (pct / 100f)
+
+private object Cols {
+    const val CHANNEL = 8f   // % of DESIGN_WIDTH — fixed
+    const val LEVEL   = 17f  // % of DESIGN_WIDTH — fixed
+    const val VOLUME  = 15f  // % of DESIGN_WIDTH — fixed
+    const val OUTPUT  = 10f  // % of DESIGN_WIDTH — fixed
+    const val ACTIONS = 10f  // % of DESIGN_WIDTH — fixed
+    // STREAMS: weight(1f) — absorbs all remaining space
 }
 
 // Channel hue lookup
@@ -91,87 +115,123 @@ fun MainWindowStack(
     onStreamUnassigned: (AudioStream) -> Unit,
     onOutputSinkChanged: (String) -> Unit,
     onChannelOutputChanged: (AudioChannel, String) -> Unit,
+    onEqChanged: (AudioChannel, com.audiorouter.model.EqSettings) -> Unit = { _, _ -> },
     initialDensity: StackDensity = StackDensity.Comfortable
 ) {
     var density by remember { mutableStateOf(initialDensity) }
+    var expandedEqChannel by remember { mutableStateOf<AudioChannel?>(null) }
     val drag = remember { DragController() }
 
     val assignedStreams = state.streams.filter { it.assignedChannel != null }
     val unassignedStreams = state.streams.filter { it.assignedChannel == null }
     val channels = listOf(AudioChannel.MASTER) + AudioChannel.routingChannels
 
-    Box(
+    // Capture original density before we override it for scaling
+    val origDensity = LocalDensity.current
+
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(StackBackdrop)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(density.outerPadding)
-        ) {
-            // ── Top bar ───────────────────────────────────────────────
-            TopBar(
-                availableSinks = state.availableSinks,
-                selectedSinkName = state.config.outputSinkName,
-                onSinkSelected = onOutputSinkChanged,
-                density = density,
-                onDensityChange = { density = it },
-                streamCount = state.streams.size,
-                channelCount = channels.size
+        // Only scale DOWN when narrower than design width; at or above design width
+        // the layout fills naturally and extra space goes to the STREAMS column.
+        val scale = (maxWidth / DESIGN_WIDTH).coerceIn(0.4f, 1.0f)
+
+        // Overriding LocalDensity uniformly scales every dp and sp value,
+        // keeping layout coordinates, touch targets, and boundsInRoot in sync.
+        CompositionLocalProvider(
+            LocalDensity provides Density(
+                density = origDensity.density * scale,
+                fontScale = origDensity.fontScale * scale
             )
-
-            Spacer(Modifier.height(density.outerPadding))
-
-            // ── Body: channel list + unassigned drawer ────────────────
-            Row(
-                modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.spacedBy(density.outerPadding)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(density.outerPadding)
             ) {
-                // Channel rows
-                Column(
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    verticalArrangement = Arrangement.spacedBy(density.rowGap)
+                // ── Top bar ───────────────────────────────────────────────
+                TopBar(
+                    availableSinks = state.availableSinks,
+                    selectedSinkName = state.config.outputSinkName,
+                    onSinkSelected = onOutputSinkChanged,
+                    density = density,
+                    onDensityChange = { density = it },
+                    streamCount = state.streams.size,
+                    channelCount = channels.size
+                )
+
+                Spacer(Modifier.height(density.outerPadding))
+
+                // ── Body: channel list + unassigned drawer ────────────────
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.spacedBy(density.outerPadding)
                 ) {
-                    ColumnHeaders()
-                    channels.forEach { channel ->
-                        val streams = assignedStreams.filter { it.assignedChannel == channel }
-                        val levels by levelMonitor.levelFlow(channel).collectAsState()
-                        val levelL = levels.first
-                        val levelR = levels.second
-                        ChannelRow(
-                            channel = channel,
-                            volume = state.volumes[channel] ?: 100,
-                            muted = state.mutes[channel] ?: false,
-                            streams = streams,
-                            availableOutputs = state.availableSinks,
-                            selectedOutput = state.channelOutputs[channel] ?: "",
-                            density = density,
-                            levelL = if (state.mutes[channel] == true) 0f else levelL,
-                            levelR = if (state.mutes[channel] == true) 0f else levelR,
-                            isDropTarget = drag.draggingStream != null && drag.hoveredChannel == channel,
-                            onVolumeChange = { onVolumeChange(channel, it) },
-                            onMuteToggle = { onMuteToggle(channel) },
-                            onStreamRemoved = { onStreamUnassigned(it) },
-                            onOutputChanged = { sink -> onChannelOutputChanged(channel, sink) },
-                            drag = drag
+                    // Scrollable channel rows — Box clips, Column scrolls
+                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                        val channelScroll = rememberScrollState()
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(channelScroll),
+                            verticalArrangement = Arrangement.spacedBy(density.rowGap)
+                        ) {
+                            ColumnHeaders()
+                            channels.forEach { channel ->
+                                val streams = assignedStreams.filter { it.assignedChannel == channel }
+                                val levels by levelMonitor.levelFlow(channel).collectAsState()
+                                ChannelRow(
+                                    channel = channel,
+                                    volume = state.volumes[channel] ?: 100,
+                                    muted = state.mutes[channel] ?: false,
+                                    streams = streams,
+                                    availableOutputs = if (channel == AudioChannel.MIC) state.availableSources else state.availableSinks,
+                                    selectedOutput = state.channelOutputs[channel] ?: "",
+                                    density = density,
+                                    levelL = if (state.mutes[channel] == true) 0f else levels.first,
+                                    levelR = if (state.mutes[channel] == true) 0f else levels.second,
+                                    isDropTarget = drag.draggingStream != null && drag.hoveredChannel == channel,
+                                    eqSettings = if (channel != AudioChannel.MASTER) state.channelEq[channel] else null,
+                                    eqExpanded = expandedEqChannel == channel,
+                                    onEqToggleExpand = {
+                                        expandedEqChannel = if (expandedEqChannel == channel) null else channel
+                                    },
+                                    onEqChanged = { settings -> onEqChanged(channel, settings) },
+                                    onVolumeChange = { onVolumeChange(channel, it) },
+                                    onMuteToggle = { onMuteToggle(channel) },
+                                    onStreamRemoved = { onStreamUnassigned(it) },
+                                    onOutputChanged = { sink -> onChannelOutputChanged(channel, sink) },
+                                    drag = drag
+                                )
+                            }
+                        }
+                        // Scrollbar — visible only when content overflows
+                        VerticalScrollbar(
+                            adapter = rememberScrollbarAdapter(channelScroll),
+                            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                            style = LocalScrollbarStyle.current.copy(
+                                unhoverColor = Color(0x33FFFFFF),
+                                hoverColor   = Color(0x66FFFFFF)
+                            )
                         )
                     }
+
+                    // Unassigned drawer
+                    UnassignedDrawer(
+                        streams = unassignedStreams,
+                        totalStreams = state.streams.size,
+                        drag = drag,
+                        density = density,
+                        onAssign = { stream, channel -> onStreamAssigned(stream, channel) }
+                    )
                 }
-
-                // Unassigned drawer
-                UnassignedDrawer(
-                    streams = unassignedStreams,
-                    totalStreams = state.streams.size,
-                    drag = drag,
-                    density = density,
-                    onAssign = { stream, channel -> onStreamAssigned(stream, channel) }
-                )
             }
-        }
 
-        // ── Drag overlay (rendered last so it floats above everything) ─
-        DragFloater(drag = drag)
+            // ── Drag overlay (floats above everything, in the scaled coordinate space) ─
+            DragFloater(drag = drag)
+        }
     }
 }
 
@@ -255,27 +315,28 @@ private fun rememberCpuUsage(): Float {
 @Composable
 private fun ColumnHeaders() {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        HeaderCell("CHANNEL", widthFraction = 0f, fixedWidth = 90.dp)
-        HeaderCell("STREAMS", widthFraction = 1f)
-        HeaderCell("LEVEL", widthFraction = 0f, fixedWidth = 160.dp)
-        HeaderCell("VOLUME", widthFraction = 0f, fixedWidth = 220.dp)
-        HeaderCell("OUTPUT", widthFraction = 0f, fixedWidth = 180.dp)
-        Spacer(Modifier.width(36.dp))
+        HeaderCell("CHANNEL", Modifier.width(colDp(Cols.CHANNEL)))
+        HeaderCell("STREAMS", Modifier.weight(1f))
+        HeaderCell("LEVEL",   Modifier.width(colDp(Cols.LEVEL)))
+        HeaderCell("VOLUME",  Modifier.width(colDp(Cols.VOLUME)))
+        HeaderCell("OUTPUT",  Modifier.width(colDp(Cols.OUTPUT)))
+        Box(Modifier.width(colDp(Cols.ACTIONS))) // actions column — no label
     }
 }
 
 @Composable
-private fun RowScope.HeaderCell(label: String, widthFraction: Float, fixedWidth: Dp = 0.dp) {
-    val mod = if (widthFraction > 0f) Modifier.weight(widthFraction) else Modifier.width(fixedWidth)
-    Box(modifier = mod.padding(end = 14.dp)) {
+private fun RowScope.HeaderCell(label: String, modifier: Modifier) {
+    Box(modifier = modifier) {
         Text(label, color = TextFaint, fontSize = 9.5.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
 // ── Channel row ───────────────────────────────────────────────────────────
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ChannelRow(
     channel: AudioChannel,
@@ -288,21 +349,27 @@ private fun ChannelRow(
     levelL: Float,
     levelR: Float,
     isDropTarget: Boolean,
+    eqSettings: com.audiorouter.model.EqSettings?,
+    eqExpanded: Boolean,
+    onEqToggleExpand: () -> Unit,
+    onEqChanged: (com.audiorouter.model.EqSettings) -> Unit,
     onVolumeChange: (Int) -> Unit,
     onMuteToggle: () -> Unit,
     onStreamRemoved: (AudioStream) -> Unit,
     onOutputChanged: (String) -> Unit,
     drag: DragController
 ) {
+    Column {
     val hue = channel.hue()
     val borderColor = if (isDropTarget) Cyan500 else GlassStroke
     val borderWidth = if (isDropTarget) 1.5.dp else 1.dp
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .height(density.rowHeight)
+            .heightIn(min = density.rowHeight)
             .onGloballyPositioned { coords ->
                 val r = coords.boundsInRoot()
                 drag.registerTarget(channel, Rect(r.left, r.top, r.right, r.bottom))
@@ -311,7 +378,6 @@ private fun ChannelRow(
             .background(GlassFill)
             .border(borderWidth, borderColor, RoundedCornerShape(14.dp))
             .drawBehind {
-                // Hue accent stripe on the leading edge
                 drawRect(
                     color = if (muted) hue.copy(alpha = 0.25f) else hue,
                     topLeft = Offset(0f, 0f),
@@ -328,7 +394,7 @@ private fun ChannelRow(
             .padding(horizontal = 14.dp)
     ) {
         // Channel name
-        Column(modifier = Modifier.width(90.dp).padding(end = 14.dp)) {
+        Column(modifier = Modifier.width(colDp(Cols.CHANNEL))) {
             Text(
                 channel.displayName.uppercase(),
                 color = hue,
@@ -344,44 +410,37 @@ private fun ChannelRow(
             )
         }
 
-        // Streams
-        Row(
-            modifier = Modifier.weight(1f).padding(end = 14.dp),
+        // Streams — takes all remaining space; wraps to additional lines when there are many
+        FlowRow(
+            modifier = Modifier
+                .weight(1f)
+                .padding(top = 6.dp, bottom = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             if (streams.isEmpty()) {
                 EmptyDropHint(isDropTarget = isDropTarget)
             } else {
-                streams.take(4).forEach { stream ->
+                streams.forEach { stream ->
                     StreamChip(
                         stream = stream,
                         hue = hue,
                         onRemove = { onStreamRemoved(stream) }
                     )
                 }
-                if (streams.size > 4) {
-                    OverflowChip(
-                        overflow = streams.drop(4),
-                        hue = hue,
-                        onRemove = { onStreamRemoved(it) }
-                    )
-                }
             }
         }
 
         // VU meters
-        Box(modifier = Modifier.width(160.dp).padding(end = 0.dp)) {
-            VuMeterStereo(
-                levelL = levelL,
-                levelR = levelR,
-                width = 232.dp
-            )
-        }
+        VuMeterStereo(
+            levelL = levelL,
+            levelR = levelR,
+            modifier = Modifier.width(colDp(Cols.LEVEL)).fillMaxWidth()
+        )
 
         // Volume slider + percent
         Row(
-            modifier = Modifier.width(220.dp).padding(end = 14.dp),
+            modifier = Modifier.width(colDp(Cols.VOLUME)),
             verticalAlignment = Alignment.CenterVertically
         ) {
             VolumeSlider(
@@ -402,7 +461,7 @@ private fun ChannelRow(
         }
 
         // Output picker
-        Box(modifier = Modifier.width(180.dp).padding(end = 14.dp)) {
+        Box(modifier = Modifier.width(colDp(Cols.OUTPUT))) {
             if (channel != AudioChannel.MASTER) {
                 ChannelOutputPicker(
                     availableOutputs = availableOutputs,
@@ -412,14 +471,46 @@ private fun ChannelRow(
             }
         }
 
-        // Mute
-        MuteButton(muted = muted, onClick = onMuteToggle)
+        // Mute + EQ toggle
+        Row(
+            modifier = Modifier.width(colDp(Cols.ACTIONS)),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            MuteButton(muted = muted, onClick = onMuteToggle)
+            if (eqSettings != null) {
+                val eqActive = eqSettings.enabled
+                IconButton(onClick = onEqToggleExpand, modifier = Modifier.size(32.dp)) {
+                    Text(
+                        "EQ",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.5.sp,
+                        color = when {
+                            eqExpanded -> hue
+                            eqActive   -> hue.copy(alpha = 0.7f)
+                            else       -> TextFaint
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    // EQ panel (expanded below the row)
+    if (eqSettings != null && eqExpanded) {
+        com.audiorouter.ui.stack.EqPanel(
+            settings = eqSettings,
+            hue = hue,
+            onSettingsChanged = onEqChanged
+        )
     }
 
     // Cleanup target registration when leaving composition
     DisposableEffect(channel) {
         onDispose { drag.unregisterTarget(channel) }
     }
+    } // Column
 }
 
 @Composable
@@ -468,7 +559,7 @@ private fun StreamChip(
             fontWeight = FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.widthIn(max = 110.dp)
+            modifier = Modifier.widthIn(max = 80.dp)
         )
         Spacer(Modifier.width(4.dp))
         Box(

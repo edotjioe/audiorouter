@@ -39,6 +39,16 @@ class VolumeController(
         channel to MutableStateFlow(false)
     }
 
+    // Channels whose audio volume is scaled by MASTER (all routing channels except MIC).
+    private val masterScaled = AudioChannel.routingChannels.filter { it != AudioChannel.MIC }
+
+    private fun effectiveVolume(channel: AudioChannel): Int {
+        val vol = volumeFlows[channel]?.value ?: 100
+        if (channel == AudioChannel.MASTER || channel == AudioChannel.MIC) return vol
+        val master = volumeFlows[AudioChannel.MASTER]?.value ?: 100
+        return (master * vol / 100.0).toInt().coerceIn(0, 100)
+    }
+
     fun init() {
         val config = configRepo.config.value
         for (channel in AudioChannel.entries) {
@@ -46,12 +56,28 @@ class VolumeController(
             muteFlows[channel]?.value = config.mutedFor(channel)
         }
 
-        for (channel in AudioChannel.entries) {
+        // When MASTER changes, recompute and push effective volumes for all scaled channels.
+        scope.launch {
+            volumeFlows[AudioChannel.MASTER]!!
+                .debounce(100)
+                .collect { masterPct ->
+                    pipeWire.setSinkVolume(AudioChannel.MASTER.sinkName, masterPct)
+                    configRepo.update { it.withVolume(AudioChannel.MASTER, masterPct) }
+                    for (ch in masterScaled) {
+                        val effective = effectiveVolume(ch)
+                        pipeWire.setSinkVolume(ch.sinkName, effective)
+                    }
+                }
+        }
+
+        // Per-channel (non-MASTER) volume: apply effective volume (scaled by current master).
+        for (channel in AudioChannel.entries.filter { it != AudioChannel.MASTER }) {
             scope.launch {
                 volumeFlows[channel]!!
                     .debounce(100)
                     .collect { percent ->
-                        pipeWire.setSinkVolume(channel.sinkName, percent)
+                        val effective = effectiveVolume(channel)
+                        pipeWire.setSinkVolume(channel.sinkName, effective)
                         configRepo.update { it.withVolume(channel, percent) }
                     }
             }
@@ -64,6 +90,16 @@ class VolumeController(
                     }
             }
         }
+
+        // MASTER mute
+        scope.launch {
+            muteFlows[AudioChannel.MASTER]!!
+                .drop(1)
+                .collect { muted ->
+                    pipeWire.setSinkMute(AudioChannel.MASTER.sinkName, muted)
+                    configRepo.update { it.withMute(AudioChannel.MASTER, muted) }
+                }
+        }
     }
 
     suspend fun applyStoredVolumes() {
@@ -71,9 +107,14 @@ class VolumeController(
         for (channel in AudioChannel.entries) {
             val vol = config.volumeFor(channel)
             val muted = config.mutedFor(channel)
-            pipeWire.setSinkVolume(channel.sinkName, vol)
-            pipeWire.setSinkMute(channel.sinkName, muted)
-            log.info { "Applied stored volume for ${channel.displayName}: $vol%, muted=$muted" }
+            volumeFlows[channel]?.value = vol
+            muteFlows[channel]?.value = muted
+        }
+        // Apply effective volumes (master-scaled) to audio server
+        for (channel in AudioChannel.entries) {
+            pipeWire.setSinkVolume(channel.sinkName, effectiveVolume(channel))
+            pipeWire.setSinkMute(channel.sinkName, config.mutedFor(channel))
+            log.info { "Applied stored volume for ${channel.displayName}: ${effectiveVolume(channel)}% effective, muted=${config.mutedFor(channel)}" }
         }
     }
 

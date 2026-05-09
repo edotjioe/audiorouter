@@ -45,6 +45,7 @@ class WindowsAudioService : AudioService {
 
     // eRender=0, eCapture=1; DEVICE_STATE_ACTIVE=1; eConsole=0
     private val DATAFLOW_RENDER = 0
+    private val DATAFLOW_CAPTURE = 1
     private val STATE_ACTIVE = 1
     private val ROLE_CONSOLE = 0
 
@@ -110,6 +111,38 @@ class WindowsAudioService : AudioService {
         }
     }
 
+    private fun wasapiListCaptureDevices(): List<Pair<String, String>> {
+        val enumeratorPtr = createEnumerator() ?: return emptyList()
+        return try {
+            val enumerator = IMMDeviceEnumerator(enumeratorPtr)
+            val collectionRef = PointerByReference()
+            val hr = enumerator.EnumAudioEndpoints(DATAFLOW_CAPTURE, STATE_ACTIVE, collectionRef)
+            if (!COMUtils.SUCCEEDED(hr)) return emptyList()
+            val collection = IMMDeviceCollection(collectionRef.value)
+            val countRef = IntByReference()
+            collection.GetCount(countRef)
+            (0 until countRef.value).mapNotNull { i ->
+                val deviceRef = PointerByReference()
+                collection.Item(i, deviceRef)
+                val device = IMMDevice(deviceRef.value)
+                val idRef = PointerByReference()
+                device.GetId(idRef)
+                val id = idRef.value?.getWideString(0) ?: return@mapNotNull null
+                val propStoreRef = PointerByReference()
+                device.OpenPropertyStore(0, propStoreRef)
+                val propStore = IPropertyStore(propStoreRef.value)
+                val pv = PROPVARIANT()
+                val key = PROPERTYKEY()
+                key.fmtid = GUID("{a45c254e-df1c-4efd-8020-67d146a850e0}")
+                key.pid = 14
+                propStore.GetValue(key, pv)
+                id to (pv.pwszVal?.toString() ?: id)
+            }
+        } finally {
+            enumeratorPtr.let { Unknown(it).Release() }
+        }
+    }
+
     private fun getEndpointVolume(deviceId: String): IAudioEndpointVolume? {
         val enumeratorPtr = createEnumerator() ?: return null
         return try {
@@ -135,6 +168,13 @@ class WindowsAudioService : AudioService {
     }
 
     override suspend fun listRealSinks(): List<Pair<Int, String>> = listAllSinks()
+
+    override suspend fun listRealSources(): List<Pair<Int, String>> = withContext(Dispatchers.IO) {
+        wasapiListCaptureDevices().mapIndexed { i, (_, name) -> i to name }
+    }
+
+    override suspend fun loadLoopbackFromSource(sourceName: String, sinkName: String): Int = -1
+    override suspend fun loadEqSink(channel: AudioChannel, gains: List<Float>, masterSinkName: String): Int = -1
 
     override suspend fun loadNullSink(channel: AudioChannel): Int {
         // Map the channel to a VB-Cable device if present, otherwise the default output

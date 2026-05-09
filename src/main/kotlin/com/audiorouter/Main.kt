@@ -105,6 +105,9 @@ fun main() = application {
                     },
                     onChannelOutputChanged = { channel, sinkName ->
                         scope.launch { appState.changeChannelOutput(channel, sinkName) }
+                    },
+                    onEqChanged = { channel, settings ->
+                        scope.launch { appState.changeEq(channel, settings) }
                     }
                 )
             }
@@ -122,29 +125,37 @@ class AppState(private val scope: CoroutineScope) {
     val levelMonitor = LevelMonitor(audioService, scope)
 
     private val _availableSinks = MutableStateFlow<List<Pair<Int, String>>>(emptyList())
+    private val _availableSources = MutableStateFlow<List<Pair<Int, String>>>(emptyList())
 
     val uiState: StateFlow<MainWindowState> = combine(
         configRepo.config,
         routingEngine.streams,
-        _availableSinks
-    ) { config, streams, sinks ->
-        Triple(config, streams, sinks)
+        _availableSinks,
+        _availableSources
+    ) { config, streams, sinks, sources ->
+        listOf<Any>(config, streams, sinks, sources)
     }.combine(
         combine(AudioChannel.entries.map { volumeController.volumeFlow(it) }) { it.toList() }
-    ) { (config, streams, sinks), volumes ->
-        Pair(Triple(config, streams, sinks), volumes)
+    ) { base, volumes ->
+        base to volumes
     }.combine(
         combine(AudioChannel.entries.map { volumeController.muteFlow(it) }) { it.toList() }
-    ) { (triple, volumes), mutes ->
-        val (config, streams, sinks) = triple
+    ) { (base, volumes), mutes ->
+        @Suppress("UNCHECKED_CAST")
+        val config  = base[0] as com.audiorouter.model.RoutingConfig
+        val streams = base[1] as List<com.audiorouter.model.AudioStream>
+        val sinks   = base[2] as List<Pair<Int, String>>
+        val sources = base[3] as List<Pair<Int, String>>
         val channels = AudioChannel.entries
         MainWindowState(
             config = config,
             streams = streams,
             availableSinks = sinks,
+            availableSources = sources,
             volumes = channels.associateWith { ch -> volumes[channels.indexOf(ch)] },
             mutes = channels.associateWith { ch -> mutes[channels.indexOf(ch)] },
-            channelOutputs = AudioChannel.routingChannels.associateWith { ch -> config.outputSinkFor(ch) }
+            channelOutputs = AudioChannel.routingChannels.associateWith { ch -> config.outputSinkFor(ch) },
+            channelEq = AudioChannel.routingChannels.associateWith { ch -> config.eqFor(ch) }
         )
     }.stateIn(scope, SharingStarted.Eagerly, defaultUiState())
 
@@ -153,6 +164,7 @@ class AppState(private val scope: CoroutineScope) {
         configRepo.load()
 
         _availableSinks.value = audioService.listRealSinks()
+        _availableSources.value = audioService.listRealSources()
 
         val outputSink = configRepo.config.value.outputSinkName.ifBlank {
             _availableSinks.value.firstOrNull()?.second ?: ""
@@ -185,6 +197,13 @@ class AppState(private val scope: CoroutineScope) {
         log.info { "Channel ${channel.displayName} output changed to: $sinkName" }
     }
 
+    suspend fun changeEq(channel: AudioChannel, settings: com.audiorouter.model.EqSettings) {
+        configRepo.update { it.withEq(channel, settings) }
+        val outputSink = configRepo.config.value.outputSinkFor(channel)
+        sinkManager.applyEq(channel, settings, outputSink)
+        log.info { "EQ changed for ${channel.displayName}: enabled=${settings.enabled}" }
+    }
+
     suspend fun shutdown() {
         log.info { "AudioRouter shutting down" }
         routingEngine.stop()
@@ -198,8 +217,10 @@ class AppState(private val scope: CoroutineScope) {
         config = com.audiorouter.model.RoutingConfig(),
         streams = emptyList(),
         availableSinks = emptyList(),
+        availableSources = emptyList(),
         volumes = AudioChannel.entries.associateWith { 100 },
         mutes = AudioChannel.entries.associateWith { false },
-        channelOutputs = AudioChannel.routingChannels.associateWith { "" }
+        channelOutputs = AudioChannel.routingChannels.associateWith { "" },
+        channelEq = AudioChannel.routingChannels.associateWith { com.audiorouter.model.EqSettings() }
     )
 }

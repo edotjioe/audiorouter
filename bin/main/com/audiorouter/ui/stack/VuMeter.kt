@@ -39,12 +39,11 @@ import kotlin.math.max
 fun VuMeterStereo(
     levelL: Float,
     levelR: Float,
-    width: Dp,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        VuMeterRow(rawLevel = levelL, width = width)
-        VuMeterRow(rawLevel = levelR, width = width)
+        VuMeterRow(rawLevel = levelL)
+        VuMeterRow(rawLevel = levelR)
     }
 }
 
@@ -60,7 +59,6 @@ fun VuMeterStereo(
 @Composable
 fun VuMeterRow(
     rawLevel: Float,
-    width: Dp,
     height: Dp = 8.dp,
     segments: Int = 43,
     modifier: Modifier = Modifier

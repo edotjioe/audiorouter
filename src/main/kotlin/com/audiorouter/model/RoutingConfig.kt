@@ -24,7 +24,8 @@ data class RoutingConfig(
     val channelOutputSinks: Map<String, String> = emptyMap(),
     val channelVolumes: Map<String, Int> = AudioChannel.entries.associate { it.name to 100 },
     val channelMutes: Map<String, Boolean> = AudioChannel.entries.associate { it.name to false },
-    val appRules: List<AppRule> = emptyList()
+    val appRules: List<AppRule> = emptyList(),
+    val channelEq: Map<String, EqSettings> = emptyMap()
 ) {
     /** Returns the volume for [channel], defaulting to 100 if not set. */
     fun volumeFor(channel: AudioChannel): Int = channelVolumes[channel.name] ?: 100
@@ -69,4 +70,11 @@ data class RoutingConfig(
     /** Returns a copy with the rule for [appName] removed. No-op if no rule exists. */
     fun withoutRule(appName: String) =
         copy(appRules = appRules.filter { it.appName != appName })
+
+    /** Returns the [EqSettings] for [channel], defaulting to disabled/flat. */
+    fun eqFor(channel: AudioChannel): EqSettings = channelEq[channel.name] ?: EqSettings()
+
+    /** Returns a copy with the EQ settings for [channel] updated. */
+    fun withEq(channel: AudioChannel, settings: EqSettings) =
+        copy(channelEq = channelEq + (channel.name to settings))
 }
